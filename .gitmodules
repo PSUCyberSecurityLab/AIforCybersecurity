@@ -1,0 +1,9 @@
+[submodule "Chapter2-DL-for-Reverse-Engineering/FunSignature"]
+	path = Chapter2-DL-for-Reverse-Engineering/FunSignature
+	url = https://github.com/shensq04/EKLAVYA.git
+[submodule "Chapter8-AI-Conducts-Malware-Clustering/LSH"]
+	path = Chapter8-AI-Conducts-Malware-Clustering/LSH
+	url = https://github.com/go2starr/lshhdc.git
+[submodule "Chapter8-AI-Conducts-Malware-Clustering/dynamic"]
+	path = Chapter8-AI-Conducts-Malware-Clustering/dynamic
+	url = https://github.com/panda-re/panda.git

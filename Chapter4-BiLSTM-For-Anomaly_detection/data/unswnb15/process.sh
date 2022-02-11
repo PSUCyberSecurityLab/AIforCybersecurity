@@ -1,0 +1,2 @@
+# data processing
+python3 split.py ../../datasets/unsw-nb15/UNSW-NB15_1.csv ../../datasets/unsw-nb15/UNSW-NB15_2.csv ../../datasets/unsw-nb15/UNSW-NB15_3.csv ../../datasets/unsw-nb15/UNSW-NB15_4.csv --dir ../../datasets/unsw-nb15/ --head -1

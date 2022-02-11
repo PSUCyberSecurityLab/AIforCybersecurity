@@ -1,0 +1,7 @@
+tensorflow==2.3.0
+matplotlib==3.4.2
+numpy==1.18.0
+spacy==3.1.3
+progressbar==2.5
+hypertools==0.6.3
+en-core-web-md==3.2.0
