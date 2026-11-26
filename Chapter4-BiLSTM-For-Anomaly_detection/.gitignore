@@ -1,4 +1,6 @@
-.idea/.venv/
-.venv
+.idea/
+.venv/
 models/__pycache__
 utils/__pycache__
+datasets/
+out/

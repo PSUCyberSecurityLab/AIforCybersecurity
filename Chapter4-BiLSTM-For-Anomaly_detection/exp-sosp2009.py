@@ -27,6 +27,7 @@ def main():
         'seqsa': [SyntacticDistanceAndStrategyAnalysis, ],
         'auroc': [RankBasedAreaUnderCurveAnalysis, ],
         'parse': [ParseFromOriginalData, ],
+        'split': [SplitByBlock, ],
         'lkass': [ListKeyAndSequenceStatistics, ],
         'statkey': [PrintKeyAndStatistics, ],
         'sdplt': [PlotSyntacticDistance, ],
@@ -41,7 +42,8 @@ def main():
                         default='data')
     parser.add_argument('-o', '--output', help='Specify an output file to write to',
                         default=timestamp.strftime('%Y_%m_%d_%H_%M_%S'))
-    parser.add_argument('-m', '--model', help='Specify a deep learning model', default='dablog')
+    parser.add_argument('-m', '--model', help='Specify a deep learning model', default='dablog',
+                        choices=['dablog', 'autoencoder', 'deeplog'])
     parser.add_argument('--seqlen', help='Hyperparameter', type=int, default=10)
     parser.add_argument('--epochs', help='Hyperparameter', type=int, default=16)
     parser.add_argument('--logkeys', help='Logkeys Scenarios (0=32, 1=78, 2=104, 3=1129)', type=int, default=2)
@@ -57,6 +59,8 @@ def main():
     parser.add_argument('--use-mimick', help='Toggle Mimick Embedding', action='store_true')
     parser.add_argument('--stats-step', help='Step for stats (default=0.01)', type=float, default=0.01)
     parser.add_argument('--check-adjacent', help='Check adjacent sequences', type=int, default=0)
+    # Preprocessing
+    parser.add_argument('-n', help='Max number of log lines to parse (default: 0 = all)', type=int, default=0)
     # Parser
     args = parser.parse_args()
     for op in operation[args.operation]:
@@ -109,6 +113,27 @@ def readSequence(filepath, args):
     return seq
 
 
+def readLabels(filepath):
+    """
+    :function: Read block labels from either anomaly_label.csv (BlockId,Label) or '<0|1> <BlockId>' lines
+    :param filepath: path of label file
+    :return: generator of (block, label) where label is 'Normal' or 'Abnormal'
+    """
+    for line in open(filepath, 'r', encoding='utf-8'):
+        line = line.strip()
+        if not line:
+            continue
+        if ',' in line:
+            block, label = line.split(',')[: 2]
+            if label == 'Label':  # skip csv header
+                continue
+            label = 'Normal' if label == 'Normal' else 'Abnormal'
+        else:
+            label, block = line.split()
+            label = 'Normal' if int(label) == 0 else 'Abnormal'
+        yield block, label
+
+
 def SequentialAnomalyDetection(args):
     global trainset, Model
     if args.model in ['deeplog']:
@@ -121,19 +146,13 @@ def SequentialAnomalyDetection(args):
     Model.SetupGPU(args.use_gpu)
     # read labels
     normals, abnormals, count, bar = [], [], 0, util.ProgressBar('Read Anomaly Labels', 575139)
-    with open(args.label, 'r', encoding="utf-8") as file:
-        count = 0
-        reader = csv.reader(file)
-        for row in reader:
-            label, block = row[1], row[0]
-            count += 1
-            bar.update(count)
-
-            if label == 'Normal':
-                normals.append(block)
-            else:
-                abnormals.append(block)
-    
+    for block, label in readLabels(args.label):
+        count += 1
+        bar.update(count)
+        if label == 'Normal':
+            normals.append(block)
+        else:
+            abnormals.append(block)
     bar.finish()
     # build training dataset
     args.train_normal, args.train_abnormal = min(args.train_normal, len(normals)), min(args.train_abnormal, len(abnormals))
@@ -164,7 +183,7 @@ def SequentialAnomalyDetection(args):
     else:
         codebook = Codebook(trainset.types)
     trainset.codebook = codebook
-    print('Trainset Stats \n' + trainset.getStats())
+    print('Trainset Stats \n' + json.dumps(trainset.getStats(), indent=4))
     # build model
     os.makedirs(args.output, exist_ok=True)
     config = Model.Config(epochs=args.epochs, use_mimick_embedding=args.use_mimick, filepath=args.output,
@@ -424,9 +443,8 @@ def RankBasedAreaUnderCurveAnalysis(args):
     # write absolute FNs
     with open(os.path.join(args.input, 'false_negatives'), 'w') as fout:
         abnormalsubjects = set()
-        for line in open(args.label, 'r'):
-            label, subject = line.split()
-            if label == '1':
+        for subject, label in readLabels(args.label):
+            if label == 'Abnormal':
                 abnormalsubjects.add(subject)
         fns = abnormalsubjects - allTPs
         for fn in fns:
@@ -582,11 +600,9 @@ def ListKeyAndSequenceStatistics(args):
     progress, bar = 0, util.ProgressBar('List Sequences and Labels', 575139)
     seqset, evtset = {}, {}
     # parse each line from data
-    for line in open(args.label, 'r'):
+    for block, label in readLabels(args.label):
         progress += 1
         bar.update(progress)
-        label, block = line.split()
-        label = 'Normal' if int(label) == 0 else 'Abnormal'
         try:
             sequence = readSequence(os.path.join(args.input, block + '.log'), args)
         except KeyboardInterrupt:
@@ -647,11 +663,9 @@ def PrintKeyAndStatistics(args):
     TP, FP = [0] * 100, [0] * 100
     # TP, FP = [0] * len (keys), [0] * len (keys)
     progress, bar = 0, util.ProgressBar('List Sequences and Labels', 575139)
-    for line in open(args.label, 'r'):
+    for block, label in readLabels(args.label):
         progress += 1
         bar.update(progress)
-        label, block = line.split()
-        label = 'Normal' if int(label) == 0 else 'Abnormal'
         try:
             sequence = readSequence(os.path.join(args.input, block + '.log'), args)
         except KeyboardInterrupt:
@@ -907,6 +921,42 @@ def ParseFromOriginalData(args):
             break
     # close
     output.close()
+
+
+def SplitByBlock(args):
+    """
+    :function: Split json.log (output of 'parse') into one <block_id>.log file per HDFS block
+    :param args: args.input is the json.log file, args.output is the destination directory
+    """
+    os.makedirs(args.output, exist_ok=True)
+    if any(name.endswith('.log') for name in os.listdir(args.output)):
+        sys.exit('Error: ' + args.output + ' already contains .log files; remove them first (split appends)')
+    # a line may mention several blocks (e.g., NameSystem.delete), so collect every block id in the raw line
+    blkre = re.compile(r'blk_-?\d+')
+    buffers, buffered, skipped, blocks = {}, 0, 0, set()
+
+    def flush():
+        for block, lines in buffers.items():
+            with open(os.path.join(args.output, block + '.log'), 'a') as fout:
+                fout.writelines(lines)
+        buffers.clear()
+
+    for count, line in enumerate(open(args.input, 'r'), 1):
+        obj = json.loads(line)
+        if 'task' not in obj['event']:  # unhandled event; readSequence requires a task
+            skipped += 1
+            continue
+        for block in set(blkre.findall(obj['raw'])):
+            buffers.setdefault(block, []).append(line)
+            blocks.add(block)
+            buffered += 1
+        if buffered >= 1000000:
+            flush()
+            buffered = 0
+        if count % 1000000 == 0:
+            print(count, 'lines,', len(blocks), 'blocks')
+    flush()
+    print('Wrote', len(blocks), 'block files to', args.output, '(skipped', skipped, 'unhandled events)')
 
 
 if __name__ == '__main__':

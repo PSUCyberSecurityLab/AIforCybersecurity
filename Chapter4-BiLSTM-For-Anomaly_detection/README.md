@@ -49,7 +49,13 @@ python3 data/unswnb15/key.py datasets/unsw-nb15/149.171.126.1/flows.csv --nodi
 ```
 
 ### 1.2 SOSP 2009
-For *SOSP 2009*, `download_process.sh` will download the dataset and put it in `dataset/sosp2009/`. We just simply split the dataset based on block ID (no script provided, we will introduce it in `exp-sosp2009.py`).
+For *SOSP 2009*, `download_process.sh` will download the dataset and put it in `datasets/sosp2009/`. The raw log is then parsed to JSON and split into one `<block_id>.log` file per block, which is the input format `detect` expects:
+```shell
+bash data/sosp2009/download_process.sh
+python3 exp-sosp2009.py parse -i datasets/sosp2009/HDFS.log -o datasets/sosp2009/   # writes datasets/sosp2009/json.log (-n N parses only the first N lines)
+python3 exp-sosp2009.py split -i datasets/sosp2009/json.log -o datasets/sosp2009/blocks/
+```
+Then pass `-i datasets/sosp2009/blocks/` to `detect`. Supported models are `dablog`, `autoencoder` and `deeplog`.
 
 ## 2. Execution Examples
 ### 2.1 UNSW-NB15
