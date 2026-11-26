@@ -1,1 +1,4 @@
-.idea/
+.idea/.venv/
+.venv
+models/__pycache__
+utils/__pycache__
